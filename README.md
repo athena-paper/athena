@@ -5,10 +5,11 @@
   - [Intro](#intro)
   - [System Requirements](#system-requirements)
   - [Building the toolchain](#building-the-toolchain)
-  - [Download and compile Linux kernel code](#download-and-compile-linux-kernel-code)
+  - [Prepare Network Protocol Source Code for Evaluation](#prepare-network-protocol-source-code-for-evaluation)
+    - [Linux Kernel Code](#linux-kernel-code)
+    - [FreeBSD Kernel Code](#freebsd-kernel-code)
   - [Running the static taint analysis](#running-the-static-taint-analysis)
-    - [Configuring the benchmark](#configuring-the-benchmark)
-  - [Running the leakage analyzer and mitigator and the rule-based classifier](#running-the-leakage-analyzer-and-mitigator-and-the-rule-based-classifier)
+  - [Running the leakage analyzer](#running-the-leakage-analyzer)
   - [Understanding the final output](#understanding-the-final-output)
 
 
@@ -36,10 +37,8 @@ We've been building the system under Ubuntu 18.04, which provides the best compa
 # First direct to project's root dir
 cd /PATH_TO_LLVM_DIR
 
-# Configure the project under root
+# Configure the project under root and run 'make' to build LLVM
 ./configure
-
-# Run 'make' to build LLVM
 make
 
 # Direct to projects folders, configure and make for each package.
@@ -52,12 +51,14 @@ cd ../llvm-deps/
 make
 ```
 
-## Download and compile Linux kernel code
+## Prepare Network Protocol Source Code for Evaluation
+
+### Linux Kernel Code
 
 We analyzed Linux kernel v3.19 and v4.8. Here is an example of compiling the Linux v3.19 network IPv4 package.
 
 ```sh
-# Go to the directory to store 
+# Go to the directory you'd like to store the Linux source code
 cd /LINUX_PARENT_DIR
 
 # Download and extract the kernel archive
@@ -66,13 +67,24 @@ tar zxvf linux-3.19.tar.gz
 
 # Direct into the Linux folder
 cd linux-3.19
+```
 
+Before compiling you need to slightly modify the `./Makefile`. For v3.19, Add the following at line 615:
+```makefile
+    KBUILD_CFLAGS += $(call cc-option, -fno-pie)
+    KBUILD_CFLAGS += $(call cc-option, -no-pie)
+    KBUILD_AFLAGS += $(call cc-option, -fno-pie)
+    KBUILD_CPPFLAGS += $(call cc-option, -fno-pie) 
+```
+
+Continue the compilation.
+```sh
 # Configure
 make allyesconfig
 make prepare
 make modules_prepare
 
-# Compile
+# Compile, replacing 'PATH_TO_LLVM_DIR' with your llvm installation dir
 make V=0 \
     CLANG_FLAGS="-emit-llvm-bc" \
     HOSTCC="/PATH_TO_LLVM_DIR/Debug+Asserts/bin/clang --save-temps=obj -no-integrated-as -g" \
@@ -81,7 +93,10 @@ make V=0 \
     2>/dev/null
 ```
 
+### FreeBSD Kernel Code
 
+Since Compiling FreeBSD source code under Linux is cumbersome and error-prone,
+we pre-compiled the TCP and UDP code of FreeBSD v13.2 and put them under the evaluation directory. 
 
 
 ## Running the static taint analysis
@@ -90,101 +105,40 @@ make V=0 \
 # Direct to the benchmark folder
 cd /PATH_TO_LLVM_DIR/projects/llvm-deps/transportation_layer_tests
 
-# Copy the compiled LLVM bitcode
+# Copy the compiled Linux kernel LLVM bitcode
 cp /LINUX_PARENT_DIR/linux-3.19/net/ipv4/*.bc ./
+
+# Running the analysis
+# This script runs all four evaluated cases mentioned in the paper
+./runall.sh
 ```
 
-### Configuring the benchmark
+## Running the leakage analyzer
 
-Before running, you can modify the configuration file, `config.log`. A sample configuration looks like below.
-
-```json
-{
-  "signature_mode": {
-    "direction": 1,
-    "pointer": 0,
-    "custom": []
-  },
-  "lattice": {
-    "levels": [
-      {
-        "name": "secret",
-        "level": ["public", "private"]
-      }
-    ],
-    "compartments": []
-  },
-  "source": [
-    {
-      "function": "tcp_v4_rcv",
-      "type": "variable",
-      "name": "sk",
-      "index": -1,
-      "l": {
-        "secret": "private"
-      },
-      "c": {}
-    }
-  ],
-  "sink": [],
-  "using_whitelist": true,
-  "whitelist": [],
-  "entry": ["tcp_v4_rcv"]
-}
-```
-
-The field to be configured is `entry`, `source`. For TCP, the entry is `tcp_v4_rcv`. For UDP, the entry is one of the two functions `udp_rcv` and `udp_err`. For sources, replace `source` json snippet below for each protocol.
-
-```
-# TCP source
-  "source": [
-    {
-      "function": "tcp_v4_rcv",
-      "type": "variable",
-      "name": "sk",
-      "index": -1,
-      "l": {
-        "secret": "private"
-      },
-      "c": {}
-    }
-  ],
-
-# UDP source
-  "source": [
-    {
-      "type": "variable",
-      "name": "udp_table",
-      "index": -1,
-      "l": {
-        "secret": "private"
-      },
-      "c": {}
-    }
-  ],
-```
-
-
-After done with the configuration file, you can then run the analysis with the prepared script.
-```
-# Run the analysis
-./run.sh test.sh
-```
-
-## Running the leakage analyzer and mitigator and the rule-based classifier
+After the previous step, there will be four `.dot` graph files generated under the `./results` directory. You can run the leakage analyzer with the following command.
 
 ```sh
 # Under the same directory, run the script with Python 3.x
-# Example: python graph_search.py icmp_send udp_rcv.dot
-python3 graph_search.py [SINK_NAME] [DOT_NAME]
+# Example: python graph_search.py tcp_send_ack ./results/linux_tcp.dot
+python3 graph_search.py [SINK_NAME] [DOT_FILE]
 ```
+
+Option of `[DOT_FILE]` and their corresponding `[SINK_NAME]`
+- `./results/linux_tcp.dot`
+  - `tcp_send_ack`, `tcp_send_challenge_ack`, `tcp_send_dupack`
+- `./results/linux_udp.dot`
+  - `icmp_send`
+- `./results/freebsd_tcp.dot`
+  - `tcp_output`, `tcp_respond`
+- `./results/freebsd_udp.dot`
+  - `icmp_error`
 
 ## Understanding the final output
 
 The output of the script is a list of top-ranked branches in the format of their corresponding basic block names. More information (e.g., iteration, number of tainted/critical branches, detailed values of nodes) can also be found in the log printed.
 
 Sample output (simplified):
-```
+```log
 G has 6441 nodes and 7917 edges
 526 tainted branches. // Statistical information
 
@@ -199,10 +153,3 @@ Fixed nodes:  ['__udp4_lib_rcv: if.end.89']
 -----------------
 1 ['__udp4_lib_rcv: if.end.89'] // Sample output which terminates at the 1st iteration
 ```
-
-
-
-
-
-
-
