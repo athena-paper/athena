@@ -43,7 +43,7 @@ $LEVEL/Debug+Asserts/bin/opt -stats -time-passes \
   -load $LEVEL/projects/llvm-deps/Debug+Asserts/lib/pointstointerface.$EXT \
   -load $LEVEL/projects/llvm-deps/Debug+Asserts/lib/Deps.$EXT  \
   -load $LEVEL/projects/llvm-deps/Debug+Asserts/lib/Security.$EXT  \
-  -implicit-function -debug-only=taint < $1 2> tmp.dat > /dev/null
+  -implicit-function -debug-only=taint < test.bc 2> tmp.dat > /dev/null
 
 TIME=$(echo "$(date +%s) - $TIME" | bc)
 printf "Execution time: %d seconds\n" $TIME
