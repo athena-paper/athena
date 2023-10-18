@@ -7,35 +7,49 @@ else
         EXT="so"
 fi
 
-cd ../
-pwd
-make
-cd -
-
 LEVEL="../../.."
 
-TCP_FILES="tcp_ipv4.bc tcp_input.bc tcp_output.bc tcp.bc"
-UDP_FILES="udp.bc icmp.bc route.bc udp_diag.bc udp_offload.bc udp_tunnel.bc udplite.bc"
+LINUX_TCP_FILES="tcp_ipv4.bc tcp_input.bc tcp_output.bc tcp.bc"
+LINUX_UDP_FILES="udp.bc icmp.bc route.bc udp_diag.bc udp_offload.bc udp_tunnel.bc udplite.bc"
+FREEBSD_TCP_FILES="freebsd_tcp.bc"
+FREEBSD_UDP_FILES="freebsd_udp.bc"
 
-rm -f $1
-$LEVEL/Release+Asserts/bin/llvm-link $TCP_FILES -o $1
-$LEVEL/Release+Asserts/bin/opt -instnamer -mem2reg $1 -o $1
-$LEVEL/Release+Asserts/bin/llvm-dis $1 
+if [ $1 == "linux_tcp" ]; then
+  FILES=$LINUX_TCP_FILES
+elif [ $1 == "linux_udp" ]; then
+  FILES=$LINUX_UDP_FILES
+elif [ $1 == "freebsd_tcp" ]; then
+  FILES=$FREEBSD_TCP_FILES
+elif [ $1 == "freebsd_udp" ]; then
+  FILES=$FREEBSD_UDP_FILES
+else
+  echo "----------------------- ERROR -----------------------"
+  echo "Run the script with ./run.sh [sys_protocol]."
+  echo "[sys_protocol] = {linux_tcp, linux_udp, freebsd_tcp, freebsd_udp}."
+fi
+
+rm -f test.bc
+$LEVEL/Debug+Asserts/bin/llvm-link $FILES -o test.bc
+$LEVEL/Debug+Asserts/bin/opt -instnamer -mem2reg test.bc -o test.bc
+$LEVEL/Debug+Asserts/bin/llvm-dis test.bc
 
 
 TIME=$(date +%s)
 
-$LEVEL/Release+Asserts/bin/opt -stats -time-passes \
-  -load $LEVEL/projects/poolalloc/Release+Asserts/lib/LLVMDataStructure.$EXT \
-  -load $LEVEL/projects/llvm-deps/Release+Asserts/lib/Constraints.$EXT  \
-  -load $LEVEL/projects/llvm-deps/Release+Asserts/lib/sourcesinkanalysis.$EXT \
-  -load $LEVEL/projects/llvm-deps/Release+Asserts/lib/pointstointerface.$EXT \
-  -load $LEVEL/projects/llvm-deps/Release+Asserts/lib/Deps.$EXT  \
-  -load $LEVEL/projects/llvm-deps/Release+Asserts/lib/Security.$EXT  \
+$LEVEL/Debug+Asserts/bin/opt -stats -time-passes \
+  -load $LEVEL/projects/poolalloc/Debug+Asserts/lib/LLVMDataStructure.$EXT \
+  -load $LEVEL/projects/llvm-deps/Debug+Asserts/lib/Constraints.$EXT  \
+  -load $LEVEL/projects/llvm-deps/Debug+Asserts/lib/sourcesinkanalysis.$EXT \
+  -load $LEVEL/projects/llvm-deps/Debug+Asserts/lib/pointstointerface.$EXT \
+  -load $LEVEL/projects/llvm-deps/Debug+Asserts/lib/Deps.$EXT  \
+  -load $LEVEL/projects/llvm-deps/Debug+Asserts/lib/Security.$EXT  \
   -implicit-function -debug-only=taint < $1 2> tmp.dat > /dev/null
 
 TIME=$(echo "$(date +%s) - $TIME" | bc)
 printf "Execution time: %d seconds\n" $TIME
 
 python3 constraint_file.py tmp.dat > /dev/null
-python3 constraint_graph.py call-stack call-stack.dot -graph 0 > /dev/null
+python3 constraint_graph.py call-stack ./results/$1.dot -graph 0 > /dev/null
+
+rm -f tmp.dat
+rm -f call-stack
