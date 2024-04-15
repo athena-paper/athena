@@ -139,6 +139,7 @@ while True:
     #print(cycle)
     try:
         G.remove_edge(cycle[-1][0], cycle[-1][1])
+        G.nodes[cycle[-1][0]]['color'] = 'read'
     except:
         pass
         print("Failed to remove edge ({}, {})".format(cycle[-1], cycle[0]))
@@ -154,7 +155,7 @@ H = deepcopy(G)
 #G = H
 
 rts = list(reversed(list(nx.topological_sort(G))))
-print(rts[:10])
+#print(rts[:10])
 
 sink_names = [sink_name]
 # sink_names = ["tcp_send_ack", "tcp_send_challenge_ack", "tcp_send_dupack"]
